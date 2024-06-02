@@ -1,44 +1,11 @@
-// Dear ImGui: standalone example application for Glfw + Vulkan
-
-// Learn about Dear ImGui:
-// - FAQ                  https://dearimgui.com/faq
-// - Getting Started      https://dearimgui.com/getting-started
-// - Documentation        https://dearimgui.com/docs (same as your local docs/ folder).
-// - Introduction, links and more at the top of imgui.cpp
-
-// Important note to the reader who wish to integrate imgui_impl_vulkan.cpp/.h in their own engine/app.
-// - Common ImGui_ImplVulkan_XXX functions and structures are used to interface with imgui_impl_vulkan.cpp/.h.
-//   You will use those if you want to use this rendering backend in your engine/app.
-// - Helper ImGui_ImplVulkanH_XXX functions and structures are only used by this example (main.cpp) and by
-//   the backend itself (imgui_impl_vulkan.cpp), but should PROBABLY NOT be used by your own engine/app code.
-// Read comments in imgui_impl_vulkan.h.
-
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_vulkan.h"
-#include <stdio.h>          // printf, fprintf
-#include <stdlib.h>         // abort
+#include <stdio.h>
+#include <stdlib.h>
 #define GLFW_INCLUDE_NONE
-#define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
-
-// Volk headers
-#ifdef IMGUI_IMPL_VULKAN_USE_VOLK
-#define VOLK_IMPLEMENTATION
-#include <Volk/volk.h>
-#endif
-
-// [Win32] Our example includes a copy of glfw3.lib pre-compiled with VS2010 to maximize ease of testing and compatibility with old VS compilers.
-// To link with VS2010-era libraries, VS2015+ requires linking with legacy_stdio_definitions.lib, which we do using this pragma.
-// Your own project should not be affected, as you are likely to link with a newer binary of GLFW that is adequate for your version of Visual Studio.
-#if defined(_MSC_VER) && (_MSC_VER >= 1900) && !defined(IMGUI_DISABLE_WIN32_FUNCTIONS)
-#pragma comment(lib, "legacy_stdio_definitions")
-#endif
-
-//#define APP_USE_UNLIMITED_FRAME_RATE
-#ifdef _DEBUG
-#define APP_USE_VULKAN_DEBUG_REPORT
-#endif
+#include <vulkan/vulkan.hpp>
 
 // Data
 static VkAllocationCallbacks*   g_Allocator = nullptr;
@@ -59,13 +26,12 @@ static void glfw_error_callback(int error, const char* description)
 {
     fprintf(stderr, "GLFW Error %d: %s\n", error, description);
 }
-static void check_vk_result(VkResult err)
+static void check_vk_result(vk::Result err)
 {
-    if (err == 0)
+    if (err == vk::Result::eSuccess)
         return;
-    fprintf(stderr, "[vulkan] Error: VkResult = %d\n", err);
-    if (err < 0)
-        abort();
+    fprintf(stderr, "[vulkan] Error: VkResult = %d\n", static_cast<std::underlying_type<vk::Result>::type>(err));
+    abort();
 }
 
 #ifdef APP_USE_VULKAN_DEBUG_REPORT
@@ -89,13 +55,13 @@ static VkPhysicalDevice SetupVulkan_SelectPhysicalDevice()
 {
     uint32_t gpu_count;
     VkResult err = vkEnumeratePhysicalDevices(g_Instance, &gpu_count, nullptr);
-    check_vk_result(err);
+    check_vk_result(vk::Result(err));
     IM_ASSERT(gpu_count > 0);
 
     ImVector<VkPhysicalDevice> gpus;
     gpus.resize(gpu_count);
     err = vkEnumeratePhysicalDevices(g_Instance, &gpu_count, gpus.Data);
-    check_vk_result(err);
+    check_vk_result(vk::Result(err));
 
     // If a number >1 of GPUs got reported, find discrete GPU if present, or use first one available. This covers
     // most common cases (multi-gpu/integrated+dedicated graphics). Handling more complicated setups (multiple
@@ -132,7 +98,7 @@ static void SetupVulkan(ImVector<const char*> instance_extensions)
         vkEnumerateInstanceExtensionProperties(nullptr, &properties_count, nullptr);
         properties.resize(properties_count);
         err = vkEnumerateInstanceExtensionProperties(nullptr, &properties_count, properties.Data);
-        check_vk_result(err);
+        check_vk_result(vk::Result(err));
 
         // Enable required extensions
         if (IsExtensionAvailable(properties, VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME))
@@ -157,7 +123,7 @@ static void SetupVulkan(ImVector<const char*> instance_extensions)
         create_info.enabledExtensionCount = (uint32_t)instance_extensions.Size;
         create_info.ppEnabledExtensionNames = instance_extensions.Data;
         err = vkCreateInstance(&create_info, g_Allocator, &g_Instance);
-        check_vk_result(err);
+        check_vk_result(vk::Result(err));
 #ifdef IMGUI_IMPL_VULKAN_USE_VOLK
         volkLoadInstance(g_Instance);
 #endif
@@ -172,7 +138,7 @@ static void SetupVulkan(ImVector<const char*> instance_extensions)
         debug_report_ci.pfnCallback = debug_report;
         debug_report_ci.pUserData = nullptr;
         err = f_vkCreateDebugReportCallbackEXT(g_Instance, &debug_report_ci, g_Allocator, &g_DebugReport);
-        check_vk_result(err);
+        check_vk_result(vk::Result(err));
 #endif
     }
 
@@ -224,7 +190,7 @@ static void SetupVulkan(ImVector<const char*> instance_extensions)
         create_info.enabledExtensionCount = (uint32_t)device_extensions.Size;
         create_info.ppEnabledExtensionNames = device_extensions.Data;
         err = vkCreateDevice(g_PhysicalDevice, &create_info, g_Allocator, &g_Device);
-        check_vk_result(err);
+        check_vk_result(vk::Result(err));
         vkGetDeviceQueue(g_Device, g_QueueFamily, 0, &g_Queue);
     }
 
@@ -243,7 +209,7 @@ static void SetupVulkan(ImVector<const char*> instance_extensions)
         pool_info.poolSizeCount = (uint32_t)IM_ARRAYSIZE(pool_sizes);
         pool_info.pPoolSizes = pool_sizes;
         err = vkCreateDescriptorPool(g_Device, &pool_info, g_Allocator, &g_DescriptorPool);
-        check_vk_result(err);
+        check_vk_result(vk::Result(err));
     }
 }
 
@@ -312,24 +278,24 @@ static void FrameRender(ImGui_ImplVulkanH_Window* wd, ImDrawData* draw_data)
         g_SwapChainRebuild = true;
         return;
     }
-    check_vk_result(err);
+    check_vk_result(vk::Result(err));
 
     ImGui_ImplVulkanH_Frame* fd = &wd->Frames[wd->FrameIndex];
     {
         err = vkWaitForFences(g_Device, 1, &fd->Fence, VK_TRUE, UINT64_MAX);    // wait indefinitely instead of periodically checking
-        check_vk_result(err);
+        check_vk_result(vk::Result(err));
 
         err = vkResetFences(g_Device, 1, &fd->Fence);
-        check_vk_result(err);
+        check_vk_result(vk::Result(err));
     }
     {
         err = vkResetCommandPool(g_Device, fd->CommandPool, 0);
-        check_vk_result(err);
+        check_vk_result(vk::Result(err));
         VkCommandBufferBeginInfo info = {};
         info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
         info.flags |= VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
         err = vkBeginCommandBuffer(fd->CommandBuffer, &info);
-        check_vk_result(err);
+        check_vk_result(vk::Result(err));
     }
     {
         VkRenderPassBeginInfo info = {};
@@ -361,9 +327,9 @@ static void FrameRender(ImGui_ImplVulkanH_Window* wd, ImDrawData* draw_data)
         info.pSignalSemaphores = &render_complete_semaphore;
 
         err = vkEndCommandBuffer(fd->CommandBuffer);
-        check_vk_result(err);
+        check_vk_result(vk::Result(err));
         err = vkQueueSubmit(g_Queue, 1, &info, fd->Fence);
-        check_vk_result(err);
+        check_vk_result(vk::Result(err));
     }
 }
 
@@ -385,7 +351,7 @@ static void FramePresent(ImGui_ImplVulkanH_Window* wd)
         g_SwapChainRebuild = true;
         return;
     }
-    check_vk_result(err);
+    check_vk_result(vk::Result(err));
     wd->SemaphoreIndex = (wd->SemaphoreIndex + 1) % wd->SemaphoreCount; // Now we can use the next set of semaphores
 }
 
@@ -415,7 +381,7 @@ int main(int, char**)
     // Create Window Surface
     VkSurfaceKHR surface;
     VkResult err = glfwCreateWindowSurface(g_Instance, window, g_Allocator, &surface);
-    check_vk_result(err);
+    check_vk_result(vk::Result(err));
 
     // Create Framebuffers
     int w, h;
@@ -450,7 +416,7 @@ int main(int, char**)
     init_info.ImageCount = wd->ImageCount;
     init_info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
     init_info.Allocator = g_Allocator;
-    init_info.CheckVkResultFn = check_vk_result;
+    init_info.CheckVkResultFn = [](VkResult err) { check_vk_result(vk::Result(err)); };
     ImGui_ImplVulkan_Init(&init_info);
 
     // Load Fonts
@@ -515,7 +481,7 @@ int main(int, char**)
             ImGui::Begin("Hello, world!");                          // Create a window called "Hello, world!" and append into it.
 
             ImGui::Text("This is some useful text.");               // Display some text (you can use a format strings too)
-            ImGui::Checkbox("Demo Window", &show_demo_window);      // Edit bools storing our window open/close state
+            // ImGui::Checkbox("Demo Window", &show_demo_window);      // Edit bools storing our window open/close state
             ImGui::Checkbox("Another Window", &show_another_window);
 
             ImGui::SliderFloat("float", &f, 0.0f, 1.0f);            // Edit 1 float using a slider from 0.0f to 1.0f
@@ -557,7 +523,7 @@ int main(int, char**)
 
     // Cleanup
     err = vkDeviceWaitIdle(g_Device);
-    check_vk_result(err);
+    check_vk_result(vk::Result(err));
     ImGui_ImplVulkan_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
