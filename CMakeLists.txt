@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.25)
 
 project(CGCV_Reference VERSION 1.0.0)
 
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
 # GLFW
@@ -22,6 +22,10 @@ include_directories(${IMGUI_DIR} ${IMGUI_DIR}/backends ..)
 # Vulkan
 find_package(Vulkan REQUIRED)
 set(LIBRARIES "glfw;Vulkan::Vulkan")
+
+# GLM
+set(GLM_DIR external/glm)
+include_directories(${GLM_DIR}/glm)
 
 # Use vulkan headers from glfw:
 # Removo When using Vulkan SDK vulkan.hpp
