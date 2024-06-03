@@ -52,6 +52,12 @@ VkEngine::~VkEngine()
 {
     if (_isInitialized)
     {
+        vkDeviceWaitIdle(_device);
+
+		for (int i = 0; i < FRAME_OVERLAP; i++) {
+			vkDestroyCommandPool(_device, _frames[i]._commandPool, nullptr);
+		}
+
         destroy_swapchain();
 
         vkDestroySurfaceKHR(_instance, _surface, nullptr);
@@ -69,7 +75,18 @@ VkEngine::~VkEngine()
 
 void VkEngine::draw()
 {
-    // Draw code here
+    check_vk_result(vkWaitForFences(_device, 1, &get_current_frame()._renderFence, true, 1000000000));
+	check_vk_result(vkResetFences(_device, 1, &get_current_frame()._renderFence));
+
+    uint32_t swapchainImageIndex;
+	check_vk_result(vkAcquireNextImageKHR(_device, _swapchain, 1000000000, get_current_frame()._swapchainSemaphore, nullptr, &swapchainImageIndex));
+
+	VkCommandBuffer cmd = get_current_frame()._mainCommandBuffer;
+
+	check_vk_result(vkResetCommandBuffer(cmd, 0));
+	VkCommandBufferBeginInfo cmdBeginInfo = vkinit::command_buffer_begin_info(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
+	check_vk_result(vkBeginCommandBuffer(cmd, &cmdBeginInfo));
+
 }
 
 void VkEngine::run()
@@ -89,9 +106,8 @@ void VkEngine::run()
 
 void VkEngine::init_vulkan()
 {
-    vkb::Instance vkb_inst;
-
     // Create Vulkan Instance
+    vkb::Instance vkb_inst;
     {
         vkb::InstanceBuilder builder;
         auto inst_ret = builder.set_app_name("Computer Graphics Reference")
@@ -110,6 +126,7 @@ void VkEngine::init_vulkan()
         check_vk_result(err);
     }
     // Create device
+    vkb::Device vkbDevice;
     {
         VkPhysicalDeviceVulkan13Features features{};
         features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
@@ -131,10 +148,19 @@ void VkEngine::init_vulkan()
             .value();
 
         vkb::DeviceBuilder deviceBuilder{ physicalDevice };
-        vkb::Device vkbDevice = deviceBuilder.build().value();
+        vkbDevice = deviceBuilder.build().value();
 
         _chosenGPU = physicalDevice.physical_device;
         _device = vkbDevice.device;
+    }
+    // Get the graphics queue
+    {
+        _graphicsQueue = vkbDevice
+            .get_queue(vkb::QueueType::graphics)
+            .value();
+	    _graphicsQueueFamily = vkbDevice
+            .get_queue_index(vkb::QueueType::graphics)
+            .value();
     }
 
 }
@@ -177,10 +203,25 @@ void VkEngine::destroy_swapchain()
 
 void VkEngine::init_commands()
 {
-    //nothing yet
+	VkCommandPoolCreateInfo commandPoolInfo = vkinit::command_pool_create_info(_graphicsQueueFamily, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
+	for (int i = 0; i < FRAME_OVERLAP; i++) {
+		check_vk_result(vkCreateCommandPool(_device, &commandPoolInfo, nullptr, &_frames[i]._commandPool));
+
+		VkCommandBufferAllocateInfo cmdAllocInfo = vkinit::command_buffer_allocate_info(_frames[i]._commandPool, 1);
+		
+        check_vk_result(vkAllocateCommandBuffers(_device, &cmdAllocInfo, &_frames[i]._mainCommandBuffer));
+	}
 }
 
 void VkEngine::init_sync_structures()
 {
-    //nothing yet
+    VkFenceCreateInfo fenceCreateInfo = vkinit::fence_create_info(VK_FENCE_CREATE_SIGNALED_BIT);
+	VkSemaphoreCreateInfo semaphoreCreateInfo = vkinit::semaphore_create_info();
+
+	for (int i = 0; i < FRAME_OVERLAP; i++) {
+		check_vk_result(vkCreateFence(_device, &fenceCreateInfo, nullptr, &_frames[i]._renderFence));
+
+		check_vk_result(vkCreateSemaphore(_device, &semaphoreCreateInfo, nullptr, &_frames[i]._swapchainSemaphore));
+		check_vk_result(vkCreateSemaphore(_device, &semaphoreCreateInfo, nullptr, &_frames[i]._renderSemaphore));
+	}
 }
