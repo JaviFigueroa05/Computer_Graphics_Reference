@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.25)
 
 project(CGCV_Reference VERSION 1.0.0)
 
-set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
 # GLFW
@@ -21,15 +21,22 @@ include_directories(${IMGUI_DIR} ${IMGUI_DIR}/backends ..)
 
 # Vulkan
 find_package(Vulkan REQUIRED)
-set(LIBRARIES "glfw;Vulkan::Vulkan")
 
 # GLM
 set(GLM_DIR external/glm)
 include_directories(${GLM_DIR}/glm)
 
 # Use vulkan headers from glfw:
-# Removo When using Vulkan SDK vulkan.hpp
-include_directories(${GLFW_DIR}/deps)
+# include_directories(${GLFW_DIR}/deps)
+
+# VkBootstrap
+set(VKB_DIR external/vk-bootstrap)
+option(VK_BOOTSTRAP_TEST "Build the vk-bootstrap tests" OFF)
+option(VK_BOOTSTRAP_WERROR "Ignore build errors" OFF)
+
+add_subdirectory(${VKB_DIR})
+
+set(LIBRARIES "glfw;Vulkan::Vulkan;vk-bootstrap")
 
 # Source files
 file(GLOB sources src/*.cpp)
