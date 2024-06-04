@@ -1,8 +1,12 @@
 #include "vk_engine.h"
 #include "vk_initializers.h"
 #include "vk_types.h"
+#include "vk_images.h"
 
 #include <VkBootstrap.h>
+
+#define VMA_IMPLEMENTATION
+#include <vk_mem_alloc.h>
 
 #define GLFW_INCLUDE_NONE
 #define GLFW_INCLUDE_VULKAN
@@ -53,9 +57,14 @@ VkEngine::~VkEngine()
     if (_isInitialized)
     {
         vkDeviceWaitIdle(_device);
+        _mainDeletionQueue.flush();
+
 
 		for (int i = 0; i < FRAME_OVERLAP; i++) {
 			vkDestroyCommandPool(_device, _frames[i]._commandPool, nullptr);
+            vkDestroyFence(_device, _frames[i]._renderFence, nullptr);
+            vkDestroySemaphore(_device, _frames[i]._renderSemaphore, nullptr);
+            vkDestroySemaphore(_device ,_frames[i]._swapchainSemaphore, nullptr);
 		}
 
         destroy_swapchain();
@@ -75,18 +84,59 @@ VkEngine::~VkEngine()
 
 void VkEngine::draw()
 {
-    check_vk_result(vkWaitForFences(_device, 1, &get_current_frame()._renderFence, true, 1000000000));
-	check_vk_result(vkResetFences(_device, 1, &get_current_frame()._renderFence));
-
+    // Wait for last frame to finish
+    {
+        check_vk_result(vkWaitForFences(_device, 1, &get_current_frame()._renderFence, true, 1000000000));
+        get_current_frame()._frameDeletionQueue.flush();
+        check_vk_result(vkResetFences(_device, 1, &get_current_frame()._renderFence));
+    }
+    // Acquire the next image
     uint32_t swapchainImageIndex;
-	check_vk_result(vkAcquireNextImageKHR(_device, _swapchain, 1000000000, get_current_frame()._swapchainSemaphore, nullptr, &swapchainImageIndex));
-
+    {
+    	check_vk_result(vkAcquireNextImageKHR(_device, _swapchain, 1000000000, get_current_frame()._swapchainSemaphore, nullptr, &swapchainImageIndex));
+    }
+    // Start command buffer recording
 	VkCommandBuffer cmd = get_current_frame()._mainCommandBuffer;
+    {
+        check_vk_result(vkResetCommandBuffer(cmd, 0));
+        VkCommandBufferBeginInfo cmdBeginInfo = vkinit::command_buffer_begin_info(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
+        check_vk_result(vkBeginCommandBuffer(cmd, &cmdBeginInfo));
+    }
+    // Clear Screen
+    {
+        vkutil::transition_image(cmd, _swapchainImages[swapchainImageIndex], VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
 
-	check_vk_result(vkResetCommandBuffer(cmd, 0));
-	VkCommandBufferBeginInfo cmdBeginInfo = vkinit::command_buffer_begin_info(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
-	check_vk_result(vkBeginCommandBuffer(cmd, &cmdBeginInfo));
+        VkClearColorValue clearValue;
+        float flash = std::abs(std::sin(_frameNumber / 120.f));
+        clearValue = { { 0.0f, 0.0f, flash, 1.0f } };
 
+        VkImageSubresourceRange clearRange = vkinit::image_subresource_range(VK_IMAGE_ASPECT_COLOR_BIT);
+        vkCmdClearColorImage(cmd, _swapchainImages[swapchainImageIndex], VK_IMAGE_LAYOUT_GENERAL, &clearValue, 1, &clearRange);
+        vkutil::transition_image(cmd, _swapchainImages[swapchainImageIndex], VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+        check_vk_result(vkEndCommandBuffer(cmd));
+    }
+    // Submit command buffer
+    {
+        VkCommandBufferSubmitInfo cmdinfo = vkinit::command_buffer_submit_info(cmd);	
+        VkSemaphoreSubmitInfo waitInfo = vkinit::semaphore_submit_info(VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT_KHR, get_current_frame()._swapchainSemaphore);
+        VkSemaphoreSubmitInfo signalInfo = vkinit::semaphore_submit_info(VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT, get_current_frame()._renderSemaphore);	
+        VkSubmitInfo2 submit = vkinit::submit_info(&cmdinfo,&signalInfo,&waitInfo);	
+        check_vk_result(vkQueueSubmit2(_graphicsQueue, 1, &submit, get_current_frame()._renderFence));
+    }
+    // Present frame
+    {
+        VkPresentInfoKHR presentInfo = {};
+        presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+        presentInfo.pNext = nullptr;
+        presentInfo.pSwapchains = &_swapchain;
+        presentInfo.swapchainCount = 1;
+        presentInfo.pWaitSemaphores = &get_current_frame()._renderSemaphore;
+        presentInfo.waitSemaphoreCount = 1;
+        presentInfo.pImageIndices = &swapchainImageIndex;
+        check_vk_result(vkQueuePresentKHR(_graphicsQueue, &presentInfo));
+
+        _frameNumber++;
+    }
 }
 
 void VkEngine::run()
@@ -162,12 +212,63 @@ void VkEngine::init_vulkan()
             .get_queue_index(vkb::QueueType::graphics)
             .value();
     }
+    // initialize the memory allocator
+    {
+        VmaAllocatorCreateInfo allocatorInfo = {};
+        allocatorInfo.physicalDevice = _chosenGPU;
+        allocatorInfo.device = _device;
+        allocatorInfo.instance = _instance;
+        allocatorInfo.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
+        vmaCreateAllocator(&allocatorInfo, &_allocator);
 
+        _mainDeletionQueue.push_function([&]() {
+            vmaDestroyAllocator(_allocator);
+        });
+    }
 }
 
 void VkEngine::init_swapchain()
 {
     create_swapchain(_windowExtent.width, _windowExtent.height);
+
+    //draw image size will match the window
+	VkExtent3D drawImageExtent = {
+		_windowExtent.width,
+		_windowExtent.height,
+		1
+	};
+
+	//hardcoding the draw format to 32 bit float
+	_drawImage.imageFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
+	_drawImage.imageExtent = drawImageExtent;
+
+	VkImageUsageFlags drawImageUsages{};
+	drawImageUsages |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+	drawImageUsages |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+	drawImageUsages |= VK_IMAGE_USAGE_STORAGE_BIT;
+	drawImageUsages |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+
+	VkImageCreateInfo rimg_info = vkinit::image_create_info(_drawImage.imageFormat, drawImageUsages, drawImageExtent);
+
+	//for the draw image, we want to allocate it from gpu local memory
+	VmaAllocationCreateInfo rimg_allocinfo = {};
+	rimg_allocinfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+	rimg_allocinfo.requiredFlags = VkMemoryPropertyFlags(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+	//allocate and create the image
+	vmaCreateImage(_allocator, &rimg_info, &rimg_allocinfo, &_drawImage.image, &_drawImage.allocation, nullptr);
+
+	//build a image-view for the draw image to use for rendering
+	VkImageViewCreateInfo rview_info = vkinit::imageview_create_info(_drawImage.imageFormat, _drawImage.image, VK_IMAGE_ASPECT_COLOR_BIT);
+
+	VK_CHECK(vkCreateImageView(_device, &rview_info, nullptr, &_drawImage.imageView));
+
+	//add to deletion queues
+	_mainDeletionQueue.push_function([=]() {
+		vkDestroyImageView(_device, _drawImage.imageView, nullptr);
+		vmaDestroyImage(_allocator, _drawImage.image, _drawImage.allocation);
+	});
+
 }
 
 void VkEngine::create_swapchain(uint32_t width, uint32_t height)

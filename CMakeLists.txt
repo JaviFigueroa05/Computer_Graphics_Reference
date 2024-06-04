@@ -26,17 +26,18 @@ find_package(Vulkan REQUIRED)
 set(GLM_DIR external/glm)
 include_directories(${GLM_DIR}/glm)
 
-# Use vulkan headers from glfw:
-# include_directories(${GLFW_DIR}/deps)
-
 # VkBootstrap
 set(VKB_DIR external/vk-bootstrap)
 option(VK_BOOTSTRAP_TEST "Build the vk-bootstrap tests" OFF)
 option(VK_BOOTSTRAP_WERROR "Ignore build errors" OFF)
-
 add_subdirectory(${VKB_DIR})
 
-set(LIBRARIES "glfw;Vulkan::Vulkan;vk-bootstrap")
+# Vulkan Memory Allocator
+set(VMA_DIR external/vma)
+add_subdirectory(${VMA_DIR})
+include_directories(${VMA_DIR}/include)
+
+set(LIBRARIES "glfw;Vulkan::Vulkan;vk-bootstrap;GPUOpen::VulkanMemoryAllocator")
 
 # Source files
 file(GLOB sources src/*.cpp)

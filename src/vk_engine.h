@@ -2,6 +2,22 @@
 
 #include "vk_types.h"
 
+struct DeletionQueue
+{
+	std::deque<std::function<void()>> deletors;
+
+	void push_function(std::function<void()>&& function) {
+		deletors.push_back(function);
+	}
+
+	void flush() {
+		for (auto it = deletors.rbegin(); it != deletors.rend(); it++) {
+			(*it)();
+		}
+		deletors.clear();
+	}
+};
+
 constexpr unsigned int FRAME_OVERLAP = 2;
 struct FrameData {
 	VkCommandPool _commandPool;
@@ -9,6 +25,8 @@ struct FrameData {
 
     VkSemaphore _swapchainSemaphore, _renderSemaphore;
 	VkFence _renderFence;
+    
+    DeletionQueue _frameDeletionQueue;
 };
 
 class VkEngine {
@@ -37,6 +55,13 @@ public:
 
 	VkQueue _graphicsQueue;
 	uint32_t _graphicsQueueFamily;
+
+    DeletionQueue _mainDeletionQueue;
+
+    VmaAllocator _allocator;
+
+    AllocatedImage _drawImage;
+	VkExtent2D _drawExtent;
     
     VkEngine();
     ~VkEngine();
