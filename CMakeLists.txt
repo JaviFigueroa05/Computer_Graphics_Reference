@@ -37,9 +37,22 @@ set(VMA_DIR external/vma)
 add_subdirectory(${VMA_DIR})
 include_directories(${VMA_DIR}/include)
 
-set(LIBRARIES "glfw;Vulkan::Vulkan;vk-bootstrap;GPUOpen::VulkanMemoryAllocator")
+# Shader compilation
+file(GLOB SHADERS shaders/*.vert shaders/*.frag shaders/*.comp shaders/*.geom shaders/*.tesc shaders/*.tese shaders/*.mesh shaders/*.task shaders/*.rgen shaders/*.rchit shaders/*.rmiss)
+
+foreach(SHADER IN LISTS SHADERS)
+    get_filename_component(FILENAME ${SHADER} NAME)
+    add_custom_command(OUTPUT ${FILENAME}.spv
+        COMMAND glslc ${SHADER} -o ${FILENAME}.spv
+        DEPENDS ${SHADER}
+        COMMENT "Compiling ${FILENAME}")
+list(APPEND SPV_SHADERS ${FILENAME}.spv)
+endForeach()
+
+add_custom_target(shaders ALL DEPENDS ${SPV_SHADERS})
 
 # Source files
+set(LIBRARIES "glfw;Vulkan::Vulkan;vk-bootstrap;GPUOpen::VulkanMemoryAllocator")
 file(GLOB sources src/*.cpp)
 
 add_executable(CGCV_Reference 
