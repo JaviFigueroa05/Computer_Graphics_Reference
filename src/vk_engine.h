@@ -68,6 +68,9 @@ public:
 
 	VkDescriptorSet _drawImageDescriptors;
 	VkDescriptorSetLayout _drawImageDescriptorLayout;
+
+    VkPipeline _gradientPipeline;
+	VkPipelineLayout _gradientPipelineLayout;
     
     VkEngine();
     ~VkEngine();
@@ -90,4 +93,7 @@ private:
     void init_descriptors();
 
     void draw_background(VkCommandBuffer cmd);
+
+    void init_pipelines();
+	void init_background_pipelines();
 };
