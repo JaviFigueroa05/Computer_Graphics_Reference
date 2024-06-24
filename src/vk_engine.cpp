@@ -378,6 +378,11 @@ void VkEngine::init_descriptors()
 	drawImageWrite.pImageInfo = &imgInfo;
 
 	vkUpdateDescriptorSets(_device, 1, &drawImageWrite, 0, nullptr);
+
+    _mainDeletionQueue.push_function([&]() {
+		globalDescriptorAllocator.destroy_pool(_device);
+		vkDestroyDescriptorSetLayout(_device, _drawImageDescriptorLayout, nullptr);
+	});
 }
 
 void VkEngine::init_pipelines()
