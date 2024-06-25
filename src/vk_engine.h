@@ -30,6 +30,22 @@ struct FrameData {
     DeletionQueue _frameDeletionQueue;
 };
 
+struct ComputePushConstants {
+	glm::vec4 data1;
+	glm::vec4 data2;
+	glm::vec4 data3;
+	glm::vec4 data4;
+};
+
+struct ComputeEffect {
+	const char* name;
+
+	VkPipeline pipeline;
+	VkPipelineLayout layout;
+
+	ComputePushConstants data;
+};
+
 class VkEngine {
 public:
     bool _isInitialized{ false };
@@ -69,9 +85,16 @@ public:
 	VkDescriptorSet _drawImageDescriptors;
 	VkDescriptorSetLayout _drawImageDescriptorLayout;
 
-    VkPipeline _gradientPipeline;
 	VkPipelineLayout _gradientPipelineLayout;
-    
+
+	VkFence _immFence;
+    VkCommandBuffer _immCommandBuffer;
+    VkCommandPool _immCommandPool;
+
+	std::vector<ComputeEffect> backgroundEffects;
+	int currentBackgroundEffect{0};
+
+	    
     VkEngine();
     ~VkEngine();
 
@@ -79,6 +102,8 @@ public:
 
     void draw();
     void run();
+
+	void immediate_submit(std::function<void(VkCommandBuffer cmd)>&& function);
 
 private:
 	void init_vulkan();
@@ -96,4 +121,7 @@ private:
 
     void init_pipelines();
 	void init_background_pipelines();
+
+	void init_imgui();
+	void draw_imgui(VkCommandBuffer cmd, VkImageView targetImageView);
 };
