@@ -87,6 +87,9 @@ public:
 
 	VkPipelineLayout _gradientPipelineLayout;
 
+	VkPipelineLayout _trianglePipelineLayout;
+	VkPipeline _trianglePipeline;
+
 	VkFence _immFence;
     VkCommandBuffer _immCommandBuffer;
     VkCommandPool _immCommandPool;
@@ -94,6 +97,10 @@ public:
 	std::vector<ComputeEffect> backgroundEffects;
 	int currentBackgroundEffect{0};
 
+	VkPipelineLayout _meshPipelineLayout;
+	VkPipeline _meshPipeline;
+
+	GPUMeshBuffers rectangle;
 	    
     VkEngine();
     ~VkEngine();
@@ -118,10 +125,20 @@ private:
     void init_descriptors();
 
     void draw_background(VkCommandBuffer cmd);
+	void draw_geometry(VkCommandBuffer cmd);
 
     void init_pipelines();
 	void init_background_pipelines();
+	void init_triangle_pipeline();
+	void init_mesh_pipeline();
 
 	void init_imgui();
 	void draw_imgui(VkCommandBuffer cmd, VkImageView targetImageView);
+
+	AllocatedBuffer create_buffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage);
+	void destroy_buffer(const AllocatedBuffer& buffer);
+
+	GPUMeshBuffers uploadMesh(std::span<uint32_t> indices, std::span<Vertex> vertices);
+
+	void init_default_data();
 };
